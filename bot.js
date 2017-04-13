@@ -6,8 +6,9 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const request = require('request');
 const path = require('path');
+const cron = require('node-cron');
 
-var messengerButton = "<html><head><title>Facebook Messenger Bot</title></head><body><h1>Facebook Messenger Bot</h1>This is a bot based on Messenger Platform QuickStart. For more details, see their <a href=\"https://developers.facebook.com/docs/messenger-platform/guides/quick-start\">docs</a>.<footer id=\"gWidget\"></footer><script src=\"https://widget.glitch.me/widget.min.js\"></script></body></html>";
+var messengerButton = "<html><head><title>wyd</title></head><body><h1>wyd</h1><h3>time tracking bot</h3><p>Link: <a href=\"https://www.facebook.com/wydbot\">wyd on Facebook</a></p></body></html>";
 
 const DBWrapper = require('./db.js');
 const db = new DBWrapper()
@@ -41,7 +42,7 @@ app.get('/', function(req, res) {
 
 // Message processing
 app.post('/webhook', function (req, res) {
-  console.log(req.body);
+  //console.log(req.body);
   var data = req.body;
 
   // Make sure this is a page subscription
@@ -59,7 +60,7 @@ app.post('/webhook', function (req, res) {
         } else if (event.postback) {
           receivedPostback(event);   
         } else {
-          console.log("Webhook received unknown event: ", event);
+          //console.log("Webhook received unknown event: ", event);
         }
       });
     });
@@ -79,42 +80,45 @@ function receivedMessage(event) {
   var recipientID = event.recipient.id;
   var timeOfMessage = event.timestamp;
   var message = event.message;
-
+  
+  const responses = ['kl', 'sick', 'i got u fam', 'yes mate', 'ok lol', 'Thank you - your debit card has been charged.']
+  
+  // logging -----------------------------------------------------------------------------
+  
+  console.log('---------MESSAGE RECEIVED----------')
   console.log("Received message for user %d and page %d at %d with message:", 
     senderID, recipientID, timeOfMessage);
-  console.log(JSON.stringify(message));
+  console.log('Message:', JSON.stringify(message));
   console.log('Sender', event.sender);
+  console.log('-----------MESSAGE END-------------')
   
-  // 1) Check whether senderID exists in database
-  //   a) If not: add senderID to database
-  //   b) If so: add message event to database
+  // ----------------------------------------------------------------------------- logging
   
-  if (db.checkIfUserExists(senderID)) {
-    // add event to db
-    
-  } else {
-    db.createUser(senderID)
-  };
-
-  var messageId = message.mid;
-
-  var messageText = message.text;
-  var messageAttachments = message.attachments;
-
-  if (messageText) {
-    // If we receive a text message, check to see if it matches a keyword
-    // and send back the template example. Otherwise, just echo the text we received.
-    switch (messageText) {
-      case 'generic':
-        sendGenericMessage(senderID);
-        break;
-
-      default:
-        sendTextMessage(senderID, messageText);
-    }
-  } else if (messageAttachments) {
-    sendTextMessage(senderID, "Message with attachment received");
+  // If the message has attachments, we can't do anything:
+  
+  if (message.attachments) {
+    sendTextMessage(senderID, "sorry lad I only understand words");
+    return false
   }
+  
+  // If the message doesn't have attachments, we do our thing:
+  
+  db.checkIfUserExists(senderID).then(response => {
+    if (response) { // user exists
+      return Promise.resolve(true)
+    } else { // user doesn't exist
+      return db.createUser(senderID)
+    }
+  }).then(boolean => {
+    return db.addEvent(event)
+  }).then(res => {
+    const response = responses[Math.floor(Math.random() * responses.length)];
+    sendTextMessage(senderID, response);
+  }).catch(err => {
+    console.error('Uncaught error: something went wrong somewhere', err)
+    const response = 'sorry fam something went wrong - pls message Taimur and tell him so that he can fix it :)'
+    sendTextMessage(senderID, response);
+  })
 }
 
 function receivedPostback(event) {
@@ -198,6 +202,7 @@ function sendGenericMessage(recipientId) {
 }
 
 function callSendAPI(messageData) {
+  
   request({
     uri: 'https://graph.facebook.com/v2.6/me/messages',
     qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
@@ -205,10 +210,11 @@ function callSendAPI(messageData) {
     json: messageData
 
   }, function (error, response, body) {
+    console.log('--------SENDING MESSAGE---------')
     if (!error && response.statusCode == 200) {
       var recipientId = body.recipient_id;
       var messageId = body.message_id;
-
+      
       console.log("Successfully sent generic message with id %s to recipient %s", 
         messageId, recipientId);
     } else {
@@ -216,10 +222,33 @@ function callSendAPI(messageData) {
       console.error(response);
       console.error(error);
     }
-  });  
+    console.log('--------SENT MESSAGE---------')
+  });
 }
 
 // Set Express to listen out for HTTP requests
 var server = app.listen(process.env.PORT || 3000, function () {
   console.log("Listening on port %s", server.address().port);
 });
+
+//////////////////////////
+// Cron job
+//////////////////////////
+
+function messageAllUsers() {
+  const messages = ['wyd?', 'wuu2?', 'what are you doing', 'wyd', 'wyd??', 'wyd???']
+  const message = messages[Math.floor(Math.random() * messages.length)]
+  db.getAllFbids().then(fbids => {
+    fbids.forEach(id => {
+      sendTextMessage(id, message)
+    })
+  })
+}
+
+cron.schedule('*/15 * * * *', () => {
+  console.log('Messaging all users!');
+  messageAllUsers()
+}, true);
+    
+
+  
